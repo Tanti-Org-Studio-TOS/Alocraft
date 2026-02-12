@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>ALOCRAFT – Tanti Org Studio</title>
+<style>
+body { background:#222; color:white; text-align:center; font-family:sans-serif; margin:0; }
+#menu, #gameUI { display:none; }
+#game { display:grid; justify-content:center; margin:10px auto; border:2px solid #555; }
+.block { width:32px; height:32px; }
+
+.sky { background:#7ec8ff; }
+.grass { background:linear-gradient(#3cb043,#2a7d2a); }
+.dirt { background:#8b5a2b; }
+.stone { background:#777; }
+.wood { background:#a0522d; }
+.leaf { background:#2ecc71; }
+.water { background:#3498db; }
+.lava { background:#e74c3c; }
+.sand { background:#f4e542; }
+
+.player { background:yellow; }
+.enemy { background:red; }
+.other { background:cyan; }
+.animal { background:pink; }
+
+#healthbar { width:200px; height:20px; background:#444; margin:auto; }
+#health { height:100%; background:lime; }
+
+.night { filter:brightness(0.4); }
+button { margin:5px; padding:5px 10px; cursor:pointer; }
+#hotbar { display:flex; justify-content:center; margin:5px; }
+.hotbar-slot { width:32px; height:32px; border:1px solid #fff; margin:2px; }
+
+footer { color:#888; font-size:12px; margin-top:10px; }
+</style>
+</head>
+<body>
+
+<div id="menu">
+  <h1>⛏️ ALOCRAFT – Tanti Org Studio</h1>
+  <h3>Developed by Tanti Org Studio</h3>
+  <button onclick="startGame()">Start Game</button>
+  <button onclick="loadGame()">Load Game</button>
+</div>
+
+<div id="gameUI">
+  <div id="hotbar"></div>
+  <p>← → Move | Space Jump | Click Mine/Place | F Attack</p>
+  <div id="healthbar"><div id="health"></div></div>
+  <div id="game"></div>
+
+  <h3>Inventory</h3>
+  <div id="inventory"></div>
+
+  <button onclick="craftPickaxe()">Craft Pickaxe (2 stone)</button>
+  <button onclick="craftSword()">Craft Sword (2 wood + 1 stone)</button>
+  <button onclick="saveGame()">Save</button>
+</div>
+
+<footer>© 2026 Tanti Org Studio. All rights reserved.</footer>
+
+<script>
+// ===== WORLD GENERATOR =====
+function generateColumn(){
+  let col=["sky","sky","grass","dirt","stone","stone"];
+  if(Math.random()<0.2) col[2]="water";
+  if(Math.random()<0.1) col[4]="lava";
+  if(Math.random()<0.1) col[2]="sand";
+  if(Math.random()<0.2){ col[1]="leaf"; col[0]="leaf"; col[2]="wood"; }
+  return col;
+}
+
+// ===== INITIAL MAP =====
+let world=[]; for(let i=0;i<20;i++) world.push(generateColumn());
+
+let player={x:5,y:1,vy:0,hp:100,tool:1,weapon:0};
+let enemy={x:15,y:2};
+let otherPlayer={x:2,y:2};
+let animals=[{x:7,y:2,type:"animal"}];
+let inventory={};
+let blockSize=32;
+let day=true;
+
+// ===== DRAW =====
+function drawWorld(){
+  const game=document.getElementById("game");
+  game.innerHTML="";
+  game.style.gridTemplateColumns=`repeat(${world.length},${blockSize}px)`;
+  game.className = day?"":"night";
+
+  for(let y=0;y<world[0].length;y++){
+    for(let x=0;x<world.length;x++){
+      let d=document.createElement("div");
+      d.className="block "+world[x][y];
+      if(x==player.x && y==player.y) d.className="block player";
+      if(x==enemy.x && y==enemy.y) d.className="block enemy";
+      if(x==otherPlayer.x && y==otherPlayer.y) d.className="block other";
+      animals.forEach(a=>{ if(x==a.x && y==a.y) d.className="block "+a.type; });
+      d.onclick=()=>interact(x,y);
+      game.appendChild(d);
+    }
+  }
+  drawInventory(); drawHealth(); drawHotbar();
+}
+
+// ===== INTERACT =====
+function interact(x,y){
+  if(x==player.x && y==player.y) return;
+  let type=world[x][y];
+  if(type!="sky"){
+    inventory[type]=(inventory[type]||0)+player.tool;
+    world[x][y]="sky";
+  } else {
+    if(inventory["dirt"]>0){ world[x][y]="dirt"; inventory["dirt"]--; }
+  }
+  drawWorld();
+}
+
+// ===== INVENTORY / HOTBAR =====
+function drawInventory(){ const inv=document.getElementById("inventory"); inv.innerHTML=""; for(let i in inventory) inv.innerHTML+=i+": "+inventory[i]+"<br>"; }
+function drawHotbar(){ const hotbar=document.getElementById("hotbar"); hotbar.innerHTML=""; let slots=["stone","dirt","wood","pickaxe","sword"]; slots.forEach(s=>{ let slot=document.createElement("div"); slot.className="hotbar-slot"; if(inventory[s]) slot.innerText=inventory[s]; hotbar.appendChild(slot); }); }
+
+// ===== HEALTH =====
+function drawHealth(){ let h=document.getElementById("health"); h.style.width=player.hp+"%"; if(player.hp<=0){ alert("You died in Alocraft!"); location.reload(); } }
+
+// ===== CONTROLS =====
+document.addEventListener("keydown",e=>{
+  if(e.key=="ArrowLeft") move(-1);
+  if(e.key=="ArrowRight") move(1);
+  if(e.key==" ") jump();
+  if(e.key=="f") attack();
+});
+
+function move(dx){ if(!world[player.x+dx]) world.push(generateColumn()); if(world[player.x+dx][player.y]=="sky") player.x+=dx; drawWorld(); }
+function jump(){ if(world[player.x][player.y+1]!="sky") player.vy=-2; }
+
+// ===== GRAVITY + DAY/NIGHT =====
+setInterval(()=>{
+  if(world[player.x][player.y+1]=="sky") player.y++; else player.vy=0;
+  if(player.vy<0){ player.y--; player.vy++; }
+  enemyMove(); fakeMultiplayer(); animalsMove();
+  day=!day; drawWorld();
+},500);
+
+// ===== ENEMY + MULTIPLAYER + ANIMALS =====
+function enemyMove(){ if(enemy.x>player.x) enemy.x--; else if(enemy.x<player.x) enemy.x++; if(enemy.x==player.x && enemy.y==player.y) player.hp-=10; }
+function fakeMultiplayer(){ if(Math.random()<0.5) otherPlayer.x += Math.random()<0.5?-1:1; if(otherPlayer.x<0) otherPlayer.x=0; }
+function animalsMove(){ animals.forEach(a=>{ if(Math.random()<0.3) a.x+=Math.random()<0.5?-1:1; if(a.x<0) a.x=0; }); }
+
+// ===== ATTACK =====
+function attack(){ if(player.weapon>0){ if(Math.abs(enemy.x-player.x)<=1 && Math.abs(enemy.y-player.y)<=1){ alert("Enemy killed!"); enemy.x=world.length-1; enemy.y=2; } } }
+
+// ===== CRAFTING =====
+function craftPickaxe(){ if(inventory["stone"]>=2){ inventory["stone"]-=2; player.tool=2; alert("Pickaxe crafted!"); } drawWorld(); }
+function craftSword(){ if(inventory["wood"]>=2 && inventory["stone"]>=1){ inventory["wood"]-=2; inventory["stone"]-=1; player.weapon=1; alert("Sword crafted! F to attack"); } drawWorld(); }
+
+// ===== SAVE / LOAD =====
+function saveGame(){ localStorage.setItem("alocraft_save", JSON.stringify({world,player,enemy,otherPlayer,inventory,animals})); alert("Saved!"); }
+function loadGame(){ let data=localStorage.getItem("alocraft_save"); if(data){ let g=JSON.parse(data); world=g.world; player=g.player; enemy=g.enemy; otherPlayer=g.otherPlayer; inventory=g.inventory; animals=g.animals; document.getElementById("menu").style.display="none"; document.getElementById("gameUI").style.display="block"; drawWorld(); } }
+
+// ===== START =====
+function startGame(){ document.getElementById("menu").style.display="none"; document.getElementById("gameUI").style.display="block"; drawWorld(); }
+document.getElementById("menu").style.display="block";
+</script>
+</body>
+</html>
